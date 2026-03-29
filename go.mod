@@ -3,6 +3,7 @@ module game-link
 go 1.25.8
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	github.com/gin-gonic/gin v1.10.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	golang.org/x/crypto v0.49.0
 )

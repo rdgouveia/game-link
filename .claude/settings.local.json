@@ -3,7 +3,13 @@
     "allow": [
       "Bash(go mod:*)",
       "Bash(go get:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(go.exe build:*)",
+      "Bash(\"C:/Program Files/Go/bin/go.exe\" build ./...)",
+      "Read(//usr/local/go/**)",
+      "Read(//c/Users/rafael.gouveia/go/bin/**)",
+      "Read(//c/Users/rafael.gouveia/**)",
+      "Bash(/usr/local/go/bin/go build:*)"
     ]
   }
 }
