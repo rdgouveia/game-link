@@ -1,9 +1,11 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
-	"sync"
+	"strings"
 
+	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -15,47 +17,49 @@ type User struct {
 }
 
 type Store struct {
-	mu    sync.RWMutex
-	users map[string]*User // keyed by email
+	db *sql.DB
 }
 
-func New() *Store {
-	return &Store{users: make(map[string]*User)}
+func New(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 func (s *Store) Create(username, email, password string) (*User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.users[email]; exists {
-		return nil, errors.New("email already registered")
-	}
-
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
-	u := &User{
-		ID:       email,
-		Username: username,
-		Email:    email,
-		Password: string(hash),
+	var u User
+	err = s.db.QueryRow(
+		`INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email`,
+		username, email, string(hash),
+	).Scan(&u.ID, &u.Username, &u.Email)
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			return nil, errors.New("email already registered")
+		}
+		return nil, err
 	}
-	s.users[email] = u
-	return u, nil
+
+	return &u, nil
 }
 
 func (s *Store) Authenticate(email, password string) (*User, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	u, ok := s.users[email]
-	if !ok {
+	var u User
+	err := s.db.QueryRow(
+		`SELECT id, username, email, password FROM users WHERE email = $1`,
+		email,
+	).Scan(&u.ID, &u.Username, &u.Email, &u.Password)
+	if err == sql.ErrNoRows {
 		return nil, errors.New("invalid credentials")
 	}
+	if err != nil {
+		return nil, err
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
-	return u, nil
+	return &u, nil
 }
