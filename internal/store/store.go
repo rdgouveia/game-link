@@ -1,11 +1,14 @@
 package store
 
 import (
-	"database/sql"
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 
-	_ "github.com/lib/pq"
+	"game-link/internal/db"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -17,11 +20,11 @@ type User struct {
 }
 
 type Store struct {
-	db *sql.DB
+	q *db.Queries
 }
 
-func New(db *sql.DB) *Store {
-	return &Store{db: db}
+func New(q *db.Queries) *Store {
+	return &Store{q: q}
 }
 
 func (s *Store) Create(username, email, password string) (*User, error) {
@@ -30,11 +33,11 @@ func (s *Store) Create(username, email, password string) (*User, error) {
 		return nil, err
 	}
 
-	var u User
-	err = s.db.QueryRow(
-		`INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email`,
-		username, email, string(hash),
-	).Scan(&u.ID, &u.Username, &u.Email)
+	row, err := s.q.CreateUser(context.Background(), db.CreateUserParams{
+		Username: username,
+		Email:    email,
+		Password: string(hash),
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
 			return nil, errors.New("email already registered")
@@ -42,24 +45,31 @@ func (s *Store) Create(username, email, password string) (*User, error) {
 		return nil, err
 	}
 
-	return &u, nil
+	return &User{
+		ID:       uuidToString(row.ID),
+		Username: row.Username,
+		Email:    row.Email,
+	}, nil
 }
 
 func (s *Store) Authenticate(email, password string) (*User, error) {
-	var u User
-	err := s.db.QueryRow(
-		`SELECT id, username, email, password FROM users WHERE email = $1`,
-		email,
-	).Scan(&u.ID, &u.Username, &u.Email, &u.Password)
-	if err == sql.ErrNoRows {
-		return nil, errors.New("invalid credentials")
-	}
+	row, err := s.q.GetUserByEmail(context.Background(), email)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid credentials")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(row.Password), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
-	return &u, nil
+
+	return &User{
+		ID:       uuidToString(row.ID),
+		Username: row.Username,
+		Email:    row.Email,
+	}, nil
+}
+
+func uuidToString(u pgtype.UUID) string {
+	b := u.Bytes
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

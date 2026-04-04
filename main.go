@@ -1,17 +1,18 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"log"
 	"os"
 
+	"game-link/internal/db"
 	"game-link/internal/handler"
 	"game-link/internal/middleware"
 	"game-link/internal/store"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -22,29 +23,19 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
-	db, err := sql.Open("postgres", dsn)
+	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
-		log.Fatal("failed to open database:", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
 		log.Fatal("failed to connect to database:", err)
 	}
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			username TEXT NOT NULL,
-			email TEXT NOT NULL UNIQUE,
-			password TEXT NOT NULL
-		)
-	`)
-	if err != nil {
-		log.Fatal("failed to migrate database:", err)
+	defer pool.Close()
+
+	if err := pool.Ping(context.Background()); err != nil {
+		log.Fatal("failed to ping database:", err)
 	}
 
-	s := store.New(db)
+	q := db.New(pool)
+	s := store.New(q)
 	h := handler.New(s)
 
 	r := gin.Default()
