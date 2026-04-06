@@ -3,24 +3,27 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"game-link/internal/store"
+	"game-link/internal/model"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var JWTSecret = []byte("super-secret-key")
+func jwtSecret() []byte {
+	return []byte(os.Getenv("JWT_SECRET"))
+}
 
-func GenerateToken(u *store.User) (string, error) {
+func GenerateToken(u *model.User) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":      u.ID,
 		"username": u.Username,
 		"email":    u.Email,
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(JWTSecret)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret())
 }
 
 func ParseToken(tokenStr string) (jwt.MapClaims, error) {
@@ -28,7 +31,7 @@ func ParseToken(tokenStr string) (jwt.MapClaims, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return JWTSecret, nil
+		return jwtSecret(), nil
 	})
 	if err != nil || !t.Valid {
 		return nil, errors.New("invalid token")

@@ -7,16 +7,15 @@ import (
 	"strings"
 
 	"game-link/internal/db"
+	"game-link/internal/model"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"-"`
+type Storer interface {
+	Create(ctx context.Context, username, email, password string) (*model.User, error)
+	Authenticate(ctx context.Context, email, password string) (*model.User, error)
 }
 
 type Store struct {
@@ -27,13 +26,13 @@ func New(q *db.Queries) *Store {
 	return &Store{q: q}
 }
 
-func (s *Store) Create(username, email, password string) (*User, error) {
+func (s *Store) Create(ctx context.Context, username, email, password string) (*model.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
-	row, err := s.q.CreateUser(context.Background(), db.CreateUserParams{
+	row, err := s.q.CreateUser(ctx, db.CreateUserParams{
 		Username: username,
 		Email:    email,
 		Password: string(hash),
@@ -45,15 +44,15 @@ func (s *Store) Create(username, email, password string) (*User, error) {
 		return nil, err
 	}
 
-	return &User{
+	return &model.User{
 		ID:       uuidToString(row.ID),
 		Username: row.Username,
 		Email:    row.Email,
 	}, nil
 }
 
-func (s *Store) Authenticate(email, password string) (*User, error) {
-	row, err := s.q.GetUserByEmail(context.Background(), email)
+func (s *Store) Authenticate(ctx context.Context, email, password string) (*model.User, error) {
+	row, err := s.q.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, errors.New("invalid credentials")
 	}
@@ -62,7 +61,7 @@ func (s *Store) Authenticate(email, password string) (*User, error) {
 		return nil, errors.New("invalid credentials")
 	}
 
-	return &User{
+	return &model.User{
 		ID:       uuidToString(row.ID),
 		Username: row.Username,
 		Email:    row.Email,

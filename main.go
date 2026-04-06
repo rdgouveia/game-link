@@ -7,7 +7,6 @@ import (
 
 	"game-link/internal/db"
 	"game-link/internal/handler"
-	"game-link/internal/middleware"
 	"game-link/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +20,10 @@ func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
+	}
+
+	if os.Getenv("JWT_SECRET") == "" {
+		log.Fatal("JWT_SECRET environment variable is required")
 	}
 
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -39,15 +42,7 @@ func main() {
 	h := handler.New(s)
 
 	r := gin.Default()
-
-	r.POST("/register", h.Register)
-	r.POST("/login", h.Login)
-
-	protected := r.Group("/")
-	protected.Use(middleware.Auth())
-	{
-		protected.GET("/me", h.Me)
-	}
+	h.RegisterRoutes(r)
 
 	r.Run(":8080")
 }
