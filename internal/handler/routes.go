@@ -9,10 +9,12 @@ import (
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.POST("/register", h.Register)
 	r.POST("/login", h.Login)
+	r.GET("/search", h.SearchGames)
 
 	protected := r.Group("/")
 	protected.Use(middleware.Auth())
 	{
 		protected.GET("/me", h.Me)
+
 	}
 }
