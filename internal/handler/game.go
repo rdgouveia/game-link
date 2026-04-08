@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"game-link/internal/igdb"
@@ -10,11 +9,18 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type GameBase struct {
+	Id   int    `json:"id" binding:"required"`
+	Name string `json:"name" binding:"required"`
+}
+
 type Game struct {
-	Id      int    `json:"id" binding:"required"`
-	Name    string `json:"name" binding:"required"`
+	GameBase
 	Summary string `json:"summary" binding:"required"`
 	Cover   int    `json:"cover" binding:"required"`
 }
@@ -26,7 +32,11 @@ type Cover struct {
 
 type FullGame struct {
 	Game
-	ImageUrl string
+	ImageUrl string `json:"imageUrl" binding:"required"`
+}
+
+type AddGamePayload struct {
+	IgdbId int32 `json:"igdbId" binding:"required"`
 }
 
 func joinInts(ids []int) string {
@@ -38,7 +48,11 @@ func joinInts(ids []int) string {
 }
 
 func FormatApicalypseStringToSearch(name string) string {
-	return fmt.Sprintf("fields id, name, summary, cover; search \"%s\"; where version_parent = null;", name)
+	return fmt.Sprintf("fields id, name; search \"%s\"; where version_parent = null;", name)
+}
+
+func FormatApicalypseStringToGetGame(igdbId string) string {
+	return fmt.Sprintf("fields id, name, summary, cover; where id = %s;", igdbId)
 }
 
 func FormatApicalypseStringToCovers(gameCovers []int) string {
@@ -83,7 +97,57 @@ func (h *Handler) SearchGames(c *gin.Context) {
 
 	searchString := FormatApicalypseStringToSearch(name)
 
-	body, err := igdb.SearchGamesByName(context.Background(), &http.Client{}, token, searchString)
+	body, err := igdb.Games(c.Request.Context(), &http.Client{}, token, searchString)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var games []GameBase
+	json.Unmarshal(body, &games)
+
+	c.JSON(http.StatusOK, games)
+}
+
+func (h *Handler) GetGameInfo(c *gin.Context) {
+	igdbId := c.Param("igdbId")
+
+	if igdbId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "igdbId not set"})
+		return
+	}
+
+	igdbIdInt, err := strconv.Atoi(igdbId)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	game, _ := h.store.GetGameID(c.Request.Context(), int32(igdbIdInt))
+
+	if game != nil {
+		var fullGame FullGame
+		fullGame.ImageUrl = game.ImageUrl
+		fullGame.Id = int(game.IgdbID)
+		fullGame.Name = game.Name
+		fullGame.Summary = game.Summary
+
+		c.JSON(http.StatusOK, fullGame)
+		return
+	}
+
+	token, err := igdb.GetAccessToken(h.rdb)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	queryString := FormatApicalypseStringToGetGame(igdbId)
+
+	body, err := igdb.Games(c.Request.Context(), &http.Client{}, token, queryString)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -101,7 +165,7 @@ func (h *Handler) SearchGames(c *gin.Context) {
 
 	coversQueryString := FormatApicalypseStringToCovers(gameCovers)
 
-	body, err = igdb.GetGameCovers(context.Background(), &http.Client{}, token, coversQueryString)
+	body, err = igdb.GetGameCovers(c.Request.Context(), &http.Client{}, token, coversQueryString)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -113,5 +177,38 @@ func (h *Handler) SearchGames(c *gin.Context) {
 
 	mergedGames := mergeCoversAndGames(covers, games)
 
-	c.JSON(http.StatusOK, mergedGames)
+	_, err = h.store.NewGame(c.Request.Context(), mergedGames[0].Name, mergedGames[0].Summary, mergedGames[0].ImageUrl, int32(mergedGames[0].Id))
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, mergedGames[0])
+}
+
+func (h *Handler) AddGame(c *gin.Context) {
+	claims := c.MustGet("claims").(jwt.MapClaims)
+	var payload AddGamePayload
+
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	game, err := h.store.GetGameID(c.Request.Context(), payload.IgdbId)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	parsedUUID, err := uuid.Parse(claims["sub"].(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	userUUID := pgtype.UUID{Bytes: parsedUUID, Valid: true}
+	err = h.store.NewUserGame(c.Request.Context(), userUUID, game.ID)
 }

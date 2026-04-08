@@ -14,6 +14,7 @@ func (h *Handler) Register(c *gin.Context) {
 		Username string `json:"username" binding:"required"`
 		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required"`
+		Fullname string `json:"fullname" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -21,7 +22,8 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	u, err := h.store.Create(c.Request.Context(), body.Username, body.Email, body.Password)
+	u, err := h.store.NewUser(c.Request.Context(), body.Username, body.Email, body.Password, body.Fullname)
+
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
@@ -30,6 +32,7 @@ func (h *Handler) Register(c *gin.Context) {
 		"id":       u.ID,
 		"username": u.Username,
 		"email":    u.Email,
+		"fullname": u.Fullname,
 	})
 }
 
@@ -63,5 +66,6 @@ func (h *Handler) Me(c *gin.Context) {
 		"id":       claims["sub"],
 		"username": claims["username"],
 		"email":    claims["email"],
+		"fullname": claims["fullname"],
 	})
 }

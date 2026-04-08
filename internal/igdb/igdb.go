@@ -50,7 +50,7 @@ func GetAccessToken(rdb *redis.Client) (string, error) {
 	return token.AccessToken, nil
 }
 
-func SearchGamesByName(ctx context.Context, client *http.Client, token string, searchString string) ([]byte, error) {
+func Games(ctx context.Context, client *http.Client, token string, searchString string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://api.igdb.com/v4/games",
 		strings.NewReader(searchString),

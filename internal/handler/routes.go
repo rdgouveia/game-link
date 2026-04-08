@@ -9,12 +9,13 @@ import (
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.POST("/register", h.Register)
 	r.POST("/login", h.Login)
-	r.GET("/search", h.SearchGames)
 
 	protected := r.Group("/")
 	protected.Use(middleware.Auth())
 	{
-		protected.GET("/me", h.Me)
-
+		protected.GET("/user/me", h.Me)
+		protected.GET("/game/search", h.SearchGames)
+		protected.GET("game/:igdbId", h.GetGameInfo)
+		protected.POST("/game/add", h.AddGame)
 	}
 }

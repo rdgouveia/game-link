@@ -21,6 +21,7 @@ func GenerateToken(u *model.User) (string, error) {
 		"sub":      u.ID,
 		"username": u.Username,
 		"email":    u.Email,
+		"fullname": u.Fullname,
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret())
