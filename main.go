@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
+	"game-link/internal/config"
 	"game-link/internal/db"
 	"game-link/internal/handler"
+	"game-link/internal/igdb"
+	"game-link/internal/service"
 	"game-link/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -18,21 +20,19 @@ import (
 func main() {
 	godotenv.Load()
 
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
+	cfg := config.Load()
+
+	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
-
-	if os.Getenv("JWT_SECRET") == "" {
+	if cfg.JWTSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
-
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
+	if cfg.RedisURL == "" {
 		log.Fatal("REDIS_URL environment variable is required")
 	}
 
-	redisOpts, err := redis.ParseURL(redisURL)
+	redisOpts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
 		log.Fatal("failed to parse REDIS_URL:", err)
 	}
@@ -44,7 +44,7 @@ func main() {
 		log.Fatal("failed to connect to Redis:", err)
 	}
 
-	pool, err := pgxpool.New(context.Background(), dsn)
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("failed to connect to database:", err)
 	}
@@ -56,7 +56,9 @@ func main() {
 
 	q := db.New(pool)
 	s := store.New(q)
-	h := handler.New(s, rdb)
+	ig := igdb.NewClient(cfg.IGDBClientID, cfg.IGDBClientSecret, rdb)
+	games := service.NewGameService(s, ig)
+	h := handler.New(s, games)
 
 	r := gin.Default()
 	h.RegisterRoutes(r)

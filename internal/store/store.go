@@ -4,21 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"game-link/internal/db"
 	"game-link/internal/model"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
+const errCodeUniqueViolation = "23505"
+
+var (
+	ErrNotFound    = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
+)
+
 type Storer interface {
-	NewUser(ctx context.Context, username, email, password string, fullname string) (*model.User, error)
+	NewUser(ctx context.Context, username, email, password, fullname string) (*model.User, error)
 	Authenticate(ctx context.Context, email, password string) (*model.User, error)
-	NewGame(ctx context.Context, name string, summary string, imageUrl string, igdbID int32) (*model.Game, error)
-	GetGameID(ctx context.Context, igdbID int32) (*db.Game, error)
-	NewUserGame(ctx context.Context, user_id pgtype.UUID, game_id pgtype.UUID) error
+	NewGame(ctx context.Context, name, summary, imageUrl string, igdbID int32) (*model.Game, error)
+	GetGameByIgdbID(ctx context.Context, igdbID int32) (*model.Game, error)
+	NewUserGame(ctx context.Context, userID, gameID string) error
 }
 
 type Store struct {
@@ -29,7 +37,12 @@ func New(q *db.Queries) *Store {
 	return &Store{q: q}
 }
 
-func (s *Store) NewUser(ctx context.Context, username, email, password string, fullname string) (*model.User, error) {
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == errCodeUniqueViolation
+}
+
+func (s *Store) NewUser(ctx context.Context, username, email, password, fullname string) (*model.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -41,9 +54,8 @@ func (s *Store) NewUser(ctx context.Context, username, email, password string, f
 		Password: string(hash),
 		Fullname: fullname,
 	})
-
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+		if isUniqueViolation(err) {
 			return nil, errors.New("email already registered")
 		}
 		return nil, err
@@ -53,6 +65,7 @@ func (s *Store) NewUser(ctx context.Context, username, email, password string, f
 		ID:       uuidToString(row.ID),
 		Username: row.Username,
 		Email:    row.Email,
+		Fullname: row.Fullname,
 	}, nil
 }
 
@@ -74,60 +87,72 @@ func (s *Store) Authenticate(ctx context.Context, email, password string) (*mode
 	}, nil
 }
 
-func (s *Store) NewGame(ctx context.Context, name string, summary string, imageUrl string, igdbID int32) (*model.Game, error) {
+func (s *Store) NewGame(ctx context.Context, name, summary, imageUrl string, igdbID int32) (*model.Game, error) {
 	row, err := s.q.CreateGame(ctx, db.CreateGameParams{
 		Name:     name,
 		Summary:  summary,
 		ImageUrl: imageUrl,
 		IgdbID:   igdbID,
 	})
-
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			return nil, errors.New("Error while adding game to database")
+		if isUniqueViolation(err) {
+			return nil, ErrAlreadyExists
 		}
 		return nil, err
 	}
 
 	return &model.Game{
 		ID:       uuidToString(row.ID),
-		Name:     name,
-		Summary:  summary,
-		ImageUrl: imageUrl,
-		IgdbID:   igdbID,
+		Name:     row.Name,
+		Summary:  row.Summary,
+		ImageUrl: row.ImageUrl,
+		IgdbID:   row.IgdbID,
 	}, nil
 }
 
-func (s *Store) GetGameID(ctx context.Context, igdbID int32) (*db.Game, error) {
+func (s *Store) GetGameByIgdbID(ctx context.Context, igdbID int32) (*model.Game, error) {
 	row, err := s.q.GetGameByIgdbID(ctx, igdbID)
-
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			return nil, errors.New("Game not found on database")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 
-	return &row, nil
+	return &model.Game{
+		ID:       uuidToString(row.ID),
+		Name:     row.Name,
+		Summary:  row.Summary,
+		ImageUrl: row.ImageUrl,
+		IgdbID:   row.IgdbID,
+	}, nil
 }
 
-func (s *Store) NewUserGame(ctx context.Context, userId pgtype.UUID, gameId pgtype.UUID) error {
-	err := s.q.AddGameToUser(ctx, db.AddGameToUserParams{
-		UserID: userId,
-		GameID: gameId,
-	})
-
+func (s *Store) NewUserGame(ctx context.Context, userID, gameID string) error {
+	userUUID, err := stringToUUID(userID)
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			return errors.New("Error while adding game to database")
-		}
-		return err
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+	gameUUID, err := stringToUUID(gameID)
+	if err != nil {
+		return fmt.Errorf("invalid game ID: %w", err)
 	}
 
-	return nil
+	return s.q.AddGameToUser(ctx, db.AddGameToUserParams{
+		UserID: userUUID,
+		GameID: gameUUID,
+	})
 }
 
 func uuidToString(u pgtype.UUID) string {
 	b := u.Bytes
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func stringToUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return u, nil
 }
