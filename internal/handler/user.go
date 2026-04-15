@@ -62,10 +62,19 @@ func (h *Handler) Login(c *gin.Context) {
 
 func (h *Handler) Me(c *gin.Context) {
 	claims := c.MustGet("claims").(jwt.MapClaims)
+	userID := claims["sub"].(string)
+
+	games, err := h.store.GetUserGames(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":       claims["sub"],
 		"username": claims["username"],
 		"email":    claims["email"],
 		"fullname": claims["fullname"],
+		"games":    games,
 	})
 }

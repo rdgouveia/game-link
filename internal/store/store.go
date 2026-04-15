@@ -27,6 +27,7 @@ type Storer interface {
 	NewGame(ctx context.Context, name, summary, imageUrl string, igdbID int32) (*model.Game, error)
 	GetGameByIgdbID(ctx context.Context, igdbID int32) (*model.Game, error)
 	NewUserGame(ctx context.Context, userID, gameID string) error
+	GetUserGames(ctx context.Context, userID string) ([]model.Game, error)
 }
 
 type Store struct {
@@ -142,6 +143,30 @@ func (s *Store) NewUserGame(ctx context.Context, userID, gameID string) error {
 		UserID: userUUID,
 		GameID: gameUUID,
 	})
+}
+
+func (s *Store) GetUserGames(ctx context.Context, userID string) ([]model.Game, error) {
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	rows, err := s.q.GetGamesByUser(ctx, userUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	games := make([]model.Game, len(rows))
+	for i, row := range rows {
+		games[i] = model.Game{
+			ID:       uuidToString(row.ID),
+			Name:     row.Name,
+			Summary:  row.Summary,
+			ImageUrl: row.ImageUrl,
+			IgdbID:   row.IgdbID,
+		}
+	}
+	return games, nil
 }
 
 func uuidToString(u pgtype.UUID) string {
