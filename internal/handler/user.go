@@ -60,9 +60,79 @@ func (h *Handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token})
 }
 
+func (h *Handler) SearchUsers(c *gin.Context) {
+	name := c.Query("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name not set"})
+		return
+	}
+
+	claims := c.MustGet("claims").(jwt.MapClaims)
+	currentUserID := claims["sub"].(string)
+
+	users, err := h.store.SearchUsersByFullname(c.Request.Context(), name, currentUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *Handler) GetUserByUsername(c *gin.Context) {
+	claims := c.MustGet("claims").(jwt.MapClaims)
+	currentUserID := claims["sub"].(string)
+
+	user, err := h.store.GetUserByUsername(c.Request.Context(), c.Param("username"), currentUserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *Handler) CheckEmail(c *gin.Context) {
+	email := c.Query("email")
+	if email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email not set"})
+		return
+	}
+
+	exists, err := h.store.EmailExists(c.Request.Context(), email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exists": exists})
+}
+
+func (h *Handler) CheckUsername(c *gin.Context) {
+	username := c.Query("username")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username not set"})
+		return
+	}
+
+	exists, err := h.store.UsernameExists(c.Request.Context(), username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exists": exists})
+}
+
 func (h *Handler) Me(c *gin.Context) {
 	claims := c.MustGet("claims").(jwt.MapClaims)
 	userID := claims["sub"].(string)
+
+	user, err := h.store.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	games, err := h.store.GetUserGames(c.Request.Context(), userID)
 	if err != nil {
@@ -71,10 +141,34 @@ func (h *Handler) Me(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":       claims["sub"],
-		"username": claims["username"],
-		"email":    claims["email"],
-		"fullname": claims["fullname"],
-		"games":    games,
+		"id":        user.ID,
+		"username":  user.Username,
+		"email":     user.Email,
+		"fullname":  user.Fullname,
+		"biography": user.Biography,
+		"verified":  user.Verified,
+		"avatarUrl": user.AvatarURL,
+		"games":     games,
 	})
+}
+
+func (h *Handler) UpdateProfile(c *gin.Context) {
+	claims := c.MustGet("claims").(jwt.MapClaims)
+	userID := claims["sub"].(string)
+
+	var body struct {
+		Fullname  string `json:"fullname" binding:"required"`
+		Biography string `json:"biography"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.store.UpdateUserProfile(c.Request.Context(), userID, body.Fullname, body.Biography); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "profile updated"})
 }

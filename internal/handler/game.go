@@ -44,6 +44,20 @@ func (h *Handler) GetGameInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, game)
 }
 
+func (h *Handler) RemoveGame(c *gin.Context) {
+	claims := c.MustGet("claims").(jwt.MapClaims)
+
+	userID := claims["sub"].(string)
+	gameID := c.Param("id")
+
+	if err := h.games.RemoveFromUserLibrary(c.Request.Context(), userID, gameID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "game removed from library"})
+}
+
 func (h *Handler) AddGame(c *gin.Context) {
 	claims := c.MustGet("claims").(jwt.MapClaims)
 

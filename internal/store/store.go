@@ -24,10 +24,18 @@ var (
 type Storer interface {
 	NewUser(ctx context.Context, username, email, password, fullname string) (*model.User, error)
 	Authenticate(ctx context.Context, email, password string) (*model.User, error)
+	GetUserByID(ctx context.Context, userID string) (*model.User, error)
+	UpdateUserProfile(ctx context.Context, userID, fullname, biography string) error
+	UpdateUserAvatar(ctx context.Context, userID, avatarURL string) error
 	NewGame(ctx context.Context, name, summary, imageUrl string, igdbID int32) (*model.Game, error)
 	GetGameByIgdbID(ctx context.Context, igdbID int32) (*model.Game, error)
 	NewUserGame(ctx context.Context, userID, gameID string) error
 	GetUserGames(ctx context.Context, userID string) ([]model.Game, error)
+	RemoveUserGame(ctx context.Context, userID, gameID string) error
+	EmailExists(ctx context.Context, email string) (bool, error)
+	UsernameExists(ctx context.Context, username string) (bool, error)
+	SearchUsersByFullname(ctx context.Context, name, currentUserID string) ([]model.UserSearchResult, error)
+	GetUserByUsername(ctx context.Context, username, currentUserID string) (*model.UserSearchResult, error)
 }
 
 type Store struct {
@@ -67,6 +75,7 @@ func (s *Store) NewUser(ctx context.Context, username, email, password, fullname
 		Username: row.Username,
 		Email:    row.Email,
 		Fullname: row.Fullname,
+		Verified: row.Verified,
 	}, nil
 }
 
@@ -85,7 +94,43 @@ func (s *Store) Authenticate(ctx context.Context, email, password string) (*mode
 		Username: row.Username,
 		Email:    row.Email,
 		Fullname: row.Fullname,
+		Verified: row.Verified,
 	}, nil
+}
+
+func (s *Store) GetUserByID(ctx context.Context, userID string) (*model.User, error) {
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.q.GetUserByID(ctx, userUUID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &model.User{
+		ID:        uuidToString(row.ID),
+		Username:  row.Username,
+		Email:     row.Email,
+		Fullname:  row.Fullname,
+		Biography: row.Biography.String,
+		Verified:  row.Verified,
+		AvatarURL: row.AvatarUrl.String,
+	}, nil
+}
+
+func (s *Store) UpdateUserProfile(ctx context.Context, userID, fullname, biography string) error {
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		return err
+	}
+	return s.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+		Fullname:  fullname,
+		Biography: pgtype.Text{String: biography, Valid: biography != ""},
+		ID:        userUUID,
+	})
 }
 
 func (s *Store) NewGame(ctx context.Context, name, summary, imageUrl string, igdbID int32) (*model.Game, error) {
@@ -167,6 +212,108 @@ func (s *Store) GetUserGames(ctx context.Context, userID string) ([]model.Game, 
 		}
 	}
 	return games, nil
+}
+
+func (s *Store) SearchUsersByFullname(ctx context.Context, name, currentUserID string) ([]model.UserSearchResult, error) {
+	currentUUID, err := stringToUUID(currentUserID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q.SearchUsersByFullname(ctx, db.SearchUsersByFullnameParams{
+		Column1:     pgtype.Text{String: name, Valid: true},
+		RequesterID: currentUUID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	results := make([]model.UserSearchResult, len(rows))
+	for i, row := range rows {
+		results[i] = model.UserSearchResult{
+			ID:         uuidToString(row.ID),
+			Username:   row.Username,
+			Fullname:   row.Fullname,
+			Biography:  row.Biography.String,
+			Verified:   row.Verified,
+			AvatarURL:  row.AvatarUrl.String,
+			LinkStatus: resolveLinkStatus(row.LinkStatus, row.LinkRequesterID, currentUserID),
+		}
+	}
+	return results, nil
+}
+
+func (s *Store) GetUserByUsername(ctx context.Context, username, currentUserID string) (*model.UserSearchResult, error) {
+	currentUUID, err := stringToUUID(currentUserID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.q.GetUserByUsername(ctx, db.GetUserByUsernameParams{
+		Username:    username,
+		RequesterID: currentUUID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &model.UserSearchResult{
+		ID:         uuidToString(row.ID),
+		Username:   row.Username,
+		Fullname:   row.Fullname,
+		Biography:  row.Biography.String,
+		Verified:   row.Verified,
+		AvatarURL:  row.AvatarUrl.String,
+		LinkStatus: resolveLinkStatus(row.LinkStatus, row.LinkRequesterID, currentUserID),
+	}, nil
+}
+
+// resolveLinkStatus converte os dados brutos do banco no status legível pelo front.
+func resolveLinkStatus(status pgtype.Text, requesterID pgtype.UUID, currentUserID string) string {
+	if !status.Valid {
+		return "none"
+	}
+	if status.String == "accepted" {
+		return "accepted"
+	}
+	if uuidToString(requesterID) == currentUserID {
+		return "pending_sent"
+	}
+	return "pending_received"
+}
+
+func (s *Store) UpdateUserAvatar(ctx context.Context, userID, avatarURL string) error {
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		return err
+	}
+	return s.q.UpdateUserAvatar(ctx, db.UpdateUserAvatarParams{
+		AvatarUrl: pgtype.Text{String: avatarURL, Valid: true},
+		ID:        userUUID,
+	})
+}
+
+func (s *Store) EmailExists(ctx context.Context, email string) (bool, error) {
+	return s.q.CheckEmailExists(ctx, email)
+}
+
+func (s *Store) UsernameExists(ctx context.Context, username string) (bool, error) {
+	return s.q.CheckUsernameExists(ctx, username)
+}
+
+func (s *Store) RemoveUserGame(ctx context.Context, userID, gameID string) error {
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+	gameUUID, err := stringToUUID(gameID)
+	if err != nil {
+		return fmt.Errorf("invalid game ID: %w", err)
+	}
+
+	return s.q.RemoveGameFromUser(ctx, db.RemoveGameFromUserParams{
+		UserID: userUUID,
+		GameID: gameUUID,
+	})
 }
 
 func uuidToString(u pgtype.UUID) string {

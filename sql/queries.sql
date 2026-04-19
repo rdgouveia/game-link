@@ -1,10 +1,19 @@
 -- name: CreateUser :one
 INSERT INTO users (username, email, password, fullname)
 VALUES ($1, $2, $3, $4)
-RETURNING id, username, email, password, fullname;
+RETURNING id, username, email, password, fullname, biography, verified;
 
 -- name: GetUserByEmail :one
-SELECT id, username, email, password, fullname FROM users WHERE email = $1;
+SELECT id, username, email, password, fullname, biography, verified FROM users WHERE email = $1;
+
+-- name: GetUserByID :one
+SELECT id, username, email, fullname, biography, verified, avatar_url FROM users WHERE id = $1;
+
+-- name: UpdateUserProfile :exec
+UPDATE users SET fullname = $1, biography = $2 WHERE id = $3;
+
+-- name: UpdateUserAvatar :exec
+UPDATE users SET avatar_url = $1 WHERE id = $2;
 
 -- name: CreateGame :one
 INSERT INTO games (name, summary, image_url, igdb_id)
@@ -20,9 +29,81 @@ INSERT INTO user_games (user_id, game_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 -- name: RemoveGameFromUser :exec
 DELETE FROM user_games WHERE user_id = $1 AND game_id = $2;
 
+-- name: CheckEmailExists :one
+SELECT EXISTS(SELECT 1 FROM users WHERE email = $1);
+
+-- name: CheckUsernameExists :one
+SELECT EXISTS(SELECT 1 FROM users WHERE username = $1);
+
+-- name: SearchUsersByFullname :many
+SELECT u.id, u.username, u.fullname, u.biography, u.verified, u.avatar_url,
+       ul.status         AS link_status,
+       ul.requester_id   AS link_requester_id
+FROM users u
+LEFT JOIN user_links ul ON (
+    (ul.requester_id = $2 AND ul.recipient_id = u.id) OR
+    (ul.recipient_id = $2 AND ul.requester_id = u.id)
+)
+WHERE u.fullname ILIKE '%' || $1 || '%'
+  AND u.id != $2
+LIMIT 20;
+
+-- name: GetUserByUsername :one
+SELECT u.id, u.username, u.fullname, u.biography, u.verified, u.avatar_url,
+       ul.status         AS link_status,
+       ul.requester_id   AS link_requester_id
+FROM users u
+LEFT JOIN user_links ul ON (
+    (ul.requester_id = $2 AND ul.recipient_id = u.id) OR
+    (ul.recipient_id = $2 AND ul.requester_id = u.id)
+)
+WHERE u.username = $1;
+
+-- name: CreateLink :exec
+INSERT INTO user_links (requester_id, recipient_id)
+VALUES ($1, $2);
+
+-- name: AcceptLink :exec
+UPDATE user_links SET status = 'accepted'
+WHERE requester_id = $1 AND recipient_id = $2;
+
+-- name: DeleteLink :exec
+DELETE FROM user_links
+WHERE (requester_id = $1 AND recipient_id = $2)
+   OR (requester_id = $2 AND recipient_id = $1);
+
+-- name: GetLinkBetweenUsers :one
+SELECT status FROM user_links
+WHERE (requester_id = $1 AND recipient_id = $2)
+   OR (requester_id = $2 AND recipient_id = $1)
+LIMIT 1;
+
+-- name: GetPendingLinksReceived :many
+SELECT ul.requester_id, ul.created_at, u.username, u.fullname, u.verified, u.avatar_url
+FROM user_links ul
+JOIN users u ON u.id = ul.requester_id
+WHERE ul.recipient_id = $1 AND ul.status = 'pending';
+
+-- name: GetAcceptedLinks :many
+SELECT
+    ul.requester_id,
+    ur.username  AS requester_username,
+    ur.fullname  AS requester_fullname,
+    ur.verified  AS requester_verified,
+    ur.avatar_url AS requester_avatar_url,
+    ul.recipient_id,
+    rc.username  AS recipient_username,
+    rc.fullname  AS recipient_fullname,
+    rc.verified  AS recipient_verified,
+    rc.avatar_url AS recipient_avatar_url
+FROM user_links ul
+JOIN users ur ON ur.id = ul.requester_id
+JOIN users rc ON rc.id = ul.recipient_id
+WHERE (ul.requester_id = $1 OR ul.recipient_id = $1)
+  AND ul.status = 'accepted';
+
 -- name: GetGamesByUser :many
 SELECT g.id, g.name, g.summary, g.image_url, g.igdb_id
 FROM games g
 JOIN user_games ug ON ug.game_id = g.id
 WHERE ug.user_id = $1;
-

@@ -14,6 +14,7 @@ type GameService interface {
 	Search(ctx context.Context, name string) ([]igdb.SearchResult, error)
 	GetOrFetch(ctx context.Context, igdbID int32) (*model.Game, error)
 	AddToUserLibrary(ctx context.Context, userID string, igdbID int32) error
+	RemoveFromUserLibrary(ctx context.Context, userID, gameID string) error
 }
 
 type gameService struct {
@@ -54,6 +55,11 @@ func (s *gameService) GetOrFetch(ctx context.Context, igdbID int32) (*model.Game
 	}
 
 	return game, nil
+}
+
+// RemoveFromUserLibrary remove a associação entre o usuário e o jogo pelo ID do banco.
+func (s *gameService) RemoveFromUserLibrary(ctx context.Context, userID, gameID string) error {
+	return s.store.RemoveUserGame(ctx, userID, gameID)
 }
 
 // AddToUserLibrary garante que o jogo existe no banco e o associa ao usuário.
