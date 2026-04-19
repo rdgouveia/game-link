@@ -59,6 +59,16 @@ go mod download
 
 ---
 
+## Gerando o código
+
+O projeto usa [sqlc](https://sqlc.dev/) para gerar código Go a partir das queries SQL. Rode antes de compilar:
+
+```bash
+make generate
+```
+
+---
+
 ## Banco de dados
 
 Crie o banco no PostgreSQL:
