@@ -1,8 +1,10 @@
+FROM sqlc/sqlc:latest AS sqlc
+
 FROM golang:1.25-alpine AS builder
 
-WORKDIR /app
+COPY --from=sqlc /workspace/sqlc /usr/local/bin/sqlc
 
-RUN go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+WORKDIR /app
 
 COPY go.mod go.sum ./
 RUN go mod download
