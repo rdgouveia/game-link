@@ -36,6 +36,8 @@ type Storer interface {
 	UsernameExists(ctx context.Context, username string) (bool, error)
 	SearchUsersByFullname(ctx context.Context, name, currentUserID string) ([]model.UserSearchResult, error)
 	GetUserByUsername(ctx context.Context, username, currentUserID string) (*model.UserSearchResult, error)
+	GetMatchCandidates(ctx context.Context, userID string) ([]model.MatchCandidate, error)
+	AvailabilityStorer
 }
 
 type Store struct {

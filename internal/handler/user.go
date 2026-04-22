@@ -89,7 +89,22 @@ func (h *Handler) GetUserByUsername(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	availability, err := h.store.GetUserAvailability(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":           user.ID,
+		"username":     user.Username,
+		"fullname":     user.Fullname,
+		"biography":    user.Biography,
+		"verified":     user.Verified,
+		"avatarUrl":    user.AvatarURL,
+		"linkStatus":   user.LinkStatus,
+		"availability": availability,
+	})
 }
 
 func (h *Handler) CheckEmail(c *gin.Context) {
@@ -140,15 +155,22 @@ func (h *Handler) Me(c *gin.Context) {
 		return
 	}
 
+	availability, err := h.store.GetUserAvailability(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"id":        user.ID,
-		"username":  user.Username,
-		"email":     user.Email,
-		"fullname":  user.Fullname,
-		"biography": user.Biography,
-		"verified":  user.Verified,
-		"avatarUrl": user.AvatarURL,
-		"games":     games,
+		"id":           user.ID,
+		"username":     user.Username,
+		"email":        user.Email,
+		"fullname":     user.Fullname,
+		"biography":    user.Biography,
+		"verified":     user.Verified,
+		"avatarUrl":    user.AvatarURL,
+		"games":        games,
+		"availability": availability,
 	})
 }
 

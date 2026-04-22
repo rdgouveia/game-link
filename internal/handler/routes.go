@@ -18,6 +18,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		protected.GET("/user/me", h.Me)
 		protected.PATCH("/user/me", h.UpdateProfile)
 		protected.POST("/user/me/avatar", h.UploadAvatar)
+		protected.GET("/user/me/availability", h.GetAvailability)
+		protected.PUT("/user/me/availability", h.SetAvailability)
 		protected.GET("/user/search", h.SearchUsers)
 		protected.GET("/user/:username", h.GetUserByUsername)
 
@@ -25,6 +27,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		protected.GET("/game/:igdbId", h.GetGameInfo)
 		protected.POST("/game/add", h.AddGame)
 		protected.DELETE("/game/:id", h.RemoveGame)
+
+		protected.GET("/match", h.GetMatches)
 
 		protected.POST("/link", h.RequestLink)
 		protected.POST("/link/:userId/accept", h.AcceptLink)

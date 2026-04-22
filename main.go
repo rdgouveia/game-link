@@ -61,8 +61,9 @@ func main() {
 	ig := igdb.NewClient(cfg.IGDBClientID, cfg.IGDBClientSecret, rdb)
 	games := service.NewGameService(s, ig)
 	links := service.NewLinkService(s)
+	match := service.NewMatchService(s)
 	r2 := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL, cfg.R2AvatarDir)
-	h := handler.New(s, games, links, r2)
+	h := handler.New(s, games, links, match, r2)
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{

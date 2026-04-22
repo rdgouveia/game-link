@@ -59,6 +59,48 @@ LEFT JOIN user_links ul ON (
 )
 WHERE u.username = $1;
 
+-- name: GetMatchCandidates :many
+SELECT
+    u.id,
+    u.username,
+    u.fullname,
+    u.biography,
+    u.verified,
+    u.avatar_url,
+    COUNT(ug2.game_id)::int                                          AS common_games,
+    (SELECT COUNT(*)::int FROM user_games ug3 WHERE ug3.user_id = u.id) AS total_games
+FROM users u
+JOIN user_games ug2 ON ug2.user_id = u.id
+    AND ug2.game_id IN (SELECT ug1.game_id FROM user_games ug1 WHERE ug1.user_id = $1)
+WHERE u.id != $1
+  AND NOT EXISTS (
+      SELECT 1 FROM user_links ul
+      WHERE (ul.requester_id = $1 AND ul.recipient_id = u.id)
+         OR (ul.recipient_id = $1 AND ul.requester_id = u.id)
+  )
+GROUP BY u.id
+HAVING COUNT(ug2.game_id) > 0
+LIMIT 100;
+
+-- name: GetUserAvailability :many
+SELECT day_of_week, start_time, end_time
+FROM user_availability
+WHERE user_id = $1
+ORDER BY day_of_week, start_time;
+
+-- name: GetAvailabilityForUsers :many
+SELECT user_id, day_of_week, start_time, end_time
+FROM user_availability
+WHERE user_id = ANY($1::uuid[])
+ORDER BY user_id, day_of_week, start_time;
+
+-- name: DeleteUserAvailability :exec
+DELETE FROM user_availability WHERE user_id = $1;
+
+-- name: InsertAvailabilitySlot :exec
+INSERT INTO user_availability (user_id, day_of_week, start_time, end_time)
+VALUES ($1, $2, $3, $4);
+
 -- name: CreateLink :exec
 INSERT INTO user_links (requester_id, recipient_id)
 VALUES ($1, $2);
