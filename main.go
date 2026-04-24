@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"game-link/internal/chat"
 	"game-link/internal/config"
 	"game-link/internal/db"
 	"game-link/internal/handler"
@@ -62,8 +63,9 @@ func main() {
 	games := service.NewGameService(s, ig)
 	links := service.NewLinkService(s)
 	match := service.NewMatchService(s)
+	hub := chat.NewHub()
 	r2 := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL, cfg.R2AvatarDir)
-	h := handler.New(s, games, links, match, r2)
+	h := handler.New(s, games, links, match, hub, r2)
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{

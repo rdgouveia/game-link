@@ -89,6 +89,12 @@ func (h *Handler) GetUserByUsername(c *gin.Context) {
 		return
 	}
 
+	games, err := h.store.GetUserGames(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	availability, err := h.store.GetUserAvailability(c.Request.Context(), user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -103,6 +109,7 @@ func (h *Handler) GetUserByUsername(c *gin.Context) {
 		"verified":     user.Verified,
 		"avatarUrl":    user.AvatarURL,
 		"linkStatus":   user.LinkStatus,
+		"games":        games,
 		"availability": availability,
 	})
 }

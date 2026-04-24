@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS user_games (
     PRIMARY KEY (user_id, game_id)
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT        NOT NULL,
+    read_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (sender_id <> receiver_id)
+);
+
 CREATE TABLE IF NOT EXISTS user_availability (
     user_id     UUID     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),

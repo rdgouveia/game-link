@@ -1,3 +1,50 @@
+-- name: InsertMessage :one
+INSERT INTO messages (sender_id, receiver_id, content)
+VALUES ($1, $2, $3)
+RETURNING id, sender_id, receiver_id, content, read_at, created_at;
+
+-- name: GetConversation :many
+SELECT id, sender_id, receiver_id, content, read_at, created_at
+FROM messages
+WHERE (sender_id = $1 AND receiver_id = $2)
+   OR (sender_id = $2 AND receiver_id = $1)
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4;
+
+-- name: MarkMessagesAsRead :exec
+UPDATE messages SET read_at = NOW()
+WHERE receiver_id = $1 AND sender_id = $2 AND read_at IS NULL;
+
+-- name: GetConversations :many
+WITH last_messages AS (
+    SELECT
+        CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END AS other_id,
+        id, sender_id, receiver_id, content, read_at, created_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END
+            ORDER BY created_at DESC
+        ) AS rn
+    FROM messages
+    WHERE sender_id = $1 OR receiver_id = $1
+)
+SELECT
+    lm.other_id,
+    lm.id,
+    lm.sender_id,
+    lm.receiver_id,
+    lm.content,
+    lm.read_at,
+    lm.created_at,
+    u.username,
+    u.fullname,
+    u.avatar_url,
+    (SELECT COUNT(*)::int FROM messages m2
+     WHERE m2.receiver_id = $1 AND m2.sender_id = lm.other_id AND m2.read_at IS NULL) AS unread_count
+FROM last_messages lm
+JOIN users u ON u.id = lm.other_id
+WHERE lm.rn = 1
+ORDER BY lm.created_at DESC;
+
 -- name: CreateUser :one
 INSERT INTO users (username, email, password, fullname)
 VALUES ($1, $2, $3, $4)
@@ -80,7 +127,8 @@ WHERE u.id != $1
   )
 GROUP BY u.id
 HAVING COUNT(ug2.game_id) > 0
-LIMIT 100;
+ORDER BY common_games DESC
+LIMIT 300;
 
 -- name: GetUserAvailability :many
 SELECT day_of_week, start_time, end_time

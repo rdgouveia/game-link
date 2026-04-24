@@ -38,6 +38,8 @@ type Storer interface {
 	GetUserByUsername(ctx context.Context, username, currentUserID string) (*model.UserSearchResult, error)
 	GetMatchCandidates(ctx context.Context, userID string) ([]model.MatchCandidate, error)
 	AvailabilityStorer
+	MessageStorer
+	LinkStorer
 }
 
 type Store struct {

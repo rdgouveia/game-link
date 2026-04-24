@@ -7,6 +7,8 @@ import (
 )
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
+	r.GET("/chat/ws", h.ChatWebSocket)
+
 	r.POST("/register", h.Register)
 	r.POST("/login", h.Login)
 	r.GET("/check/email", h.CheckEmail)
@@ -29,6 +31,10 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		protected.DELETE("/game/:id", h.RemoveGame)
 
 		protected.GET("/match", h.GetMatches)
+
+		protected.GET("/chat", h.GetConversations)
+		protected.GET("/chat/:userId", h.GetConversation)
+		protected.PATCH("/chat/:userId/read", h.MarkAsRead)
 
 		protected.POST("/link", h.RequestLink)
 		protected.POST("/link/:userId/accept", h.AcceptLink)

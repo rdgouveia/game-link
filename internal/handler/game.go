@@ -58,6 +58,8 @@ func (h *Handler) RemoveGame(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "game removed from library"})
 }
 
+const maxGamesPerUser = 5
+
 func (h *Handler) AddGame(c *gin.Context) {
 	claims := c.MustGet("claims").(jwt.MapClaims)
 
@@ -68,6 +70,17 @@ func (h *Handler) AddGame(c *gin.Context) {
 	}
 
 	userID := claims["sub"].(string)
+
+	current, err := h.store.GetUserGames(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(current) >= maxGamesPerUser {
+		c.JSON(http.StatusForbidden, gin.H{"error": "game limit reached", "limit": maxGamesPerUser})
+		return
+	}
+
 	if err := h.games.AddToUserLibrary(c.Request.Context(), userID, payload.IgdbId); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
